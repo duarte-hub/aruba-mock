@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{% block title %}Aruba Mock{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        :root { color-scheme: dark; }
+        body { font-family: ui-sans-serif, system-ui, sans-serif; }
+        .nav-link.active { color: #fb923c; border-color: #fb923c; }
+    </style>
+</head>
+<body class="h-full">
+{% if user %}
+<div class="min-h-full">
+    <header class="bg-slate-900 border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+            <div class="flex items-center gap-8">
+                <a href="/" class="font-semibold tracking-wide">
+                    <span class="text-orange-400">Aruba</span>
+                    <span class="text-slate-300">Mock</span>
+                </a>
+                <nav class="flex gap-6 text-sm">
+                    <a href="/" class="nav-link border-b-2 border-transparent py-1 hover:text-orange-400 {% if active=='dashboard' %}active{% endif %}">Dashboard</a>
+                    <a href="/devices" class="nav-link border-b-2 border-transparent py-1 hover:text-orange-400 {% if active=='devices' %}active{% endif %}">Devices</a>
+                    <a href="/insights" class="nav-link border-b-2 border-transparent py-1 hover:text-orange-400 {% if active=='insights' %}active{% endif %}">Insights</a>
+                    <a href="/airmatch" class="nav-link border-b-2 border-transparent py-1 hover:text-orange-400 {% if active=='airmatch' %}active{% endif %}">AirMatch</a>
+                </nav>
+            </div>
+            <div class="flex items-center gap-4 text-sm text-slate-400">
+                <span>{{ user }}</span>
+                <a href="/logout" class="text-slate-300 hover:text-orange-400">Sign out</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+{% else %}
+{% block anonymous %}{% endblock %}
+{% endif %}
+</body>
+</html>

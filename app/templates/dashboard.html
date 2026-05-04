@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Aruba Mock{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">Network overview</h1>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    {% for tile in tiles %}
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div class="text-sm text-slate-400">{{ tile.label }}</div>
+        <div class="text-3xl font-semibold mt-1 {{ tile.color }}">{{ tile.value }}</div>
+        {% if tile.sub %}<div class="text-xs text-slate-500 mt-1">{{ tile.sub }}</div>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="font-semibold">Top insights</h2>
+            <a href="/insights" class="text-sm text-orange-400 hover:underline">View all</a>
+        </div>
+        <ul class="space-y-3">
+            {% for i in top_insights %}
+            <li class="flex items-start gap-3">
+                <span class="mt-1 inline-block w-2 h-2 rounded-full
+                    {% if i.severity == 'critical' %}bg-red-500{% elif i.severity == 'warning' %}bg-amber-400{% else %}bg-sky-400{% endif %}"></span>
+                <div>
+                    <div class="text-sm">{{ i.title }}</div>
+                    <div class="text-xs text-slate-500">{{ i.recommendation }}</div>
+                </div>
+            </li>
+            {% else %}
+            <li class="text-sm text-slate-500">No active insights. Network looks clean.</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="font-semibold">Recently seen devices</h2>
+            <a href="/devices" class="text-sm text-orange-400 hover:underline">All devices</a>
+        </div>
+        <ul class="divide-y divide-slate-800">
+            {% for d in devices %}
+            <li class="py-2 flex items-center justify-between text-sm">
+                <div>
+                    <a href="/devices/{{ d.id }}" class="text-slate-200 hover:text-orange-400">{{ d.name }}</a>
+                    <div class="text-xs text-slate-500">{{ d.ip_address }} · {{ d.device_type.value }}</div>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded-full
+                    {% if d.status.value == 'online' %}bg-emerald-900 text-emerald-300
+                    {% elif d.status.value == 'offline' %}bg-red-900 text-red-300
+                    {% else %}bg-slate-800 text-slate-400{% endif %}">
+                    {{ d.status.value }}
+                </span>
+            </li>
+            {% else %}
+            <li class="py-3 text-sm text-slate-500">
+                No devices yet. <a href="/devices" class="text-orange-400 hover:underline">Add one</a>.
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

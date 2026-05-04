@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Devices · Aruba Mock{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-semibold">Devices</h1>
+    <button onclick="document.getElementById('add-device').classList.remove('hidden')"
+            class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2 text-sm">
+        + Add device
+    </button>
+</div>
+
+<div id="add-device" class="hidden mb-6 bg-slate-900 border border-slate-800 rounded-xl p-6">
+    <form method="post" action="/devices" class="grid md:grid-cols-2 gap-4 text-sm">
+        <label class="block">
+            <span class="text-slate-400">Name</span>
+            <input name="name" required class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">Hostname (DNS or label)</span>
+            <input name="hostname" required class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">IP address</span>
+            <input name="ip_address" required class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">Type</span>
+            <select name="device_type" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                <option value="other">other</option>
+                <option value="ap">Access Point</option>
+                <option value="switch">Switch</option>
+                <option value="gateway">Gateway</option>
+                <option value="controller">Controller</option>
+            </select>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">Site</span>
+            <input name="site" value="default" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SNMP version</span>
+            <select name="snmp_version" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                <option value="2c">v2c</option>
+                <option value="3">v3</option>
+                <option value="1">v1</option>
+            </select>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SNMP community (v1/v2c)</span>
+            <input name="snmp_community" value="public" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SNMP port</span>
+            <input name="snmp_port" type="number" value="161" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SSH user</span>
+            <input name="ssh_user" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SSH password</span>
+            <input name="ssh_password" type="password" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SSH device type (netmiko)</span>
+            <input name="ssh_device_type" value="aruba_os" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">SSH port</span>
+            <input name="ssh_port" type="number" value="22" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <div class="md:col-span-2 flex gap-3 mt-2">
+            <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2">Save</button>
+            <button type="button" onclick="document.getElementById('add-device').classList.add('hidden')"
+                    class="text-slate-400 hover:text-slate-200">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-slate-900/60 text-left text-slate-400">
+            <tr>
+                <th class="px-4 py-3 font-medium">Name</th>
+                <th class="px-4 py-3 font-medium">IP</th>
+                <th class="px-4 py-3 font-medium">Type</th>
+                <th class="px-4 py-3 font-medium">Site</th>
+                <th class="px-4 py-3 font-medium">Status</th>
+                <th class="px-4 py-3 font-medium">Last seen</th>
+                <th class="px-4 py-3 font-medium"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+        {% for d in devices %}
+            <tr>
+                <td class="px-4 py-3">
+                    <a href="/devices/{{ d.id }}" class="text-slate-200 hover:text-orange-400">{{ d.name }}</a>
+                </td>
+                <td class="px-4 py-3 text-slate-400">{{ d.ip_address }}</td>
+                <td class="px-4 py-3 text-slate-400">{{ d.device_type.value }}</td>
+                <td class="px-4 py-3 text-slate-400">{{ d.site }}</td>
+                <td class="px-4 py-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full
+                        {% if d.status.value == 'online' %}bg-emerald-900 text-emerald-300
+                        {% elif d.status.value == 'offline' %}bg-red-900 text-red-300
+                        {% else %}bg-slate-800 text-slate-400{% endif %}">
+                        {{ d.status.value }}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-slate-400">
+                    {% if d.last_seen %}{{ d.last_seen.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-right">
+                    <form method="post" action="/devices/{{ d.id }}/poll" class="inline">
+                        <button class="text-orange-400 hover:underline">Poll</button>
+                    </form>
+                    <form method="post" action="/devices/{{ d.id }}/delete" class="inline ml-3"
+                          onsubmit="return confirm('Delete {{ d.name }}?')">
+                        <button class="text-red-400 hover:underline">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="7" class="px-4 py-6 text-center text-slate-500">No devices yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

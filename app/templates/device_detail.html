@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }} · Aruba Mock{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <div>
+        <a href="/devices" class="text-sm text-slate-400 hover:text-orange-400">← Devices</a>
+        <h1 class="text-2xl font-semibold mt-1">{{ device.name }}</h1>
+        <div class="text-sm text-slate-400">{{ device.ip_address }} · {{ device.device_type.value }} · {{ device.site }}</div>
+    </div>
+    <span class="text-xs px-3 py-1 rounded-full
+        {% if device.status.value == 'online' %}bg-emerald-900 text-emerald-300
+        {% elif device.status.value == 'offline' %}bg-red-900 text-red-300
+        {% else %}bg-slate-800 text-slate-400{% endif %}">
+        {{ device.status.value }}
+    </span>
+</div>
+
+<div class="grid md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div class="text-sm text-slate-400">Last poll</div>
+        <div class="text-lg mt-1">
+            {% if device.last_seen %}{{ device.last_seen.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% else %}never{% endif %}
+        </div>
+        {% if device.last_error %}<div class="text-xs text-red-400 mt-1">{{ device.last_error }}</div>{% endif %}
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div class="text-sm text-slate-400">Firmware</div>
+        <div class="text-sm mt-1 break-words">{{ device.firmware or '—' }}</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div class="text-sm text-slate-400">Latest sample</div>
+        {% if latest %}
+            <div class="text-sm mt-1 space-y-0.5">
+                {% if latest.cpu_pct is not none %}<div>CPU: <span class="text-slate-200">{{ '%.1f'|format(latest.cpu_pct) }}%</span></div>{% endif %}
+                {% if latest.mem_used_pct is not none %}<div>Mem: <span class="text-slate-200">{{ '%.1f'|format(latest.mem_used_pct) }}%</span></div>{% endif %}
+                {% if latest.client_count is not none %}<div>Clients: <span class="text-slate-200">{{ latest.client_count }}</span></div>{% endif %}
+                {% if latest.sys_uptime_s is not none %}<div>Uptime: <span class="text-slate-200">{{ (latest.sys_uptime_s // 3600) }}h</span></div>{% endif %}
+            </div>
+        {% else %}
+            <div class="text-sm text-slate-500 mt-1">no samples yet</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <h2 class="font-semibold mb-3">Actions</h2>
+        <div class="flex gap-3">
+            <form method="post" action="/devices/{{ device.id }}/poll">
+                <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-3 py-2 text-sm">Poll now</button>
+            </form>
+        </div>
+
+        <h3 class="font-semibold mt-6 mb-2">Run a show command (SSH)</h3>
+        <p class="text-xs text-slate-500 mb-2">Allowlist: <code>show …</code> / <code>display …</code> / <code>get …</code></p>
+        <form method="post" action="/devices/{{ device.id }}/ssh" class="flex gap-2">
+            <input name="command" placeholder="show version" required
+                   class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm"/>
+            <button class="bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-2 text-sm">Run</button>
+        </form>
+        {% if ssh_output is not none %}
+            <pre class="mt-3 bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs whitespace-pre-wrap max-h-64 overflow-auto">{{ ssh_output }}</pre>
+        {% endif %}
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <h2 class="font-semibold mb-3">Radios</h2>
+        {% if device.radios %}
+            <table class="w-full text-sm">
+                <thead class="text-left text-slate-400">
+                    <tr><th class="py-1">Band</th><th>Channel</th><th>Power</th><th>Util</th><th>Noise</th><th>Clients</th></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800">
+                {% for r in device.radios %}
+                    <tr>
+                        <td class="py-1">{{ r.band }} GHz</td>
+                        <td>{{ r.channel or '—' }}</td>
+                        <td>{{ r.tx_power_dbm and ('%.1f dBm' % r.tx_power_dbm) or '—' }}</td>
+                        <td>{{ r.channel_utilization_pct and ('%.0f%%' % r.channel_utilization_pct) or '—' }}</td>
+                        <td>{{ r.noise_floor_dbm and ('%.0f dBm' % r.noise_floor_dbm) or '—' }}</td>
+                        <td>{{ r.associated_clients or '—' }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="text-sm text-slate-500">No radio data yet (only meaningful for APs).</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

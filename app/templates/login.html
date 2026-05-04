@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Aruba Mock{% endblock %}
+{% block anonymous %}
+<div class="min-h-screen flex items-center justify-center bg-slate-950">
+    <form method="post" action="/login" class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-8 space-y-4">
+        <div class="text-center mb-2">
+            <div class="text-2xl font-semibold"><span class="text-orange-400">Aruba</span> Mock</div>
+            <div class="text-sm text-slate-400 mt-1">Sign in to continue</div>
+        </div>
+        {% if error %}<div class="text-sm text-red-400">{{ error }}</div>{% endif %}
+        <label class="block text-sm">
+            <span class="text-slate-300">Username</span>
+            <input name="username" autocomplete="username" required
+                   class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block text-sm">
+            <span class="text-slate-300">Password</span>
+            <input name="password" type="password" autocomplete="current-password" required
+                   class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <button class="w-full bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg py-2">
+            Sign in
+        </button>
+    </form>
+</div>
+{% endblock %}

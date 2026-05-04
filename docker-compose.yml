@@ -1,0 +1,18 @@
+services:
+  aruba-mock:
+    build: .
+    image: aruba-mock:latest
+    container_name: aruba-mock
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # On Unraid, set this to /mnt/user/appdata/aruba-mock
+      - ./data:/data
+    environment:
+      ARUBA_ADMIN_USER: admin
+      ARUBA_ADMIN_PASSWORD: ChangeMe!
+      ARUBA_SECRET_KEY: change-me-to-a-random-string
+      ARUBA_POLL_INTERVAL: "60"
+      ARUBA_LOG_LEVEL: info
+      TZ: UTC
