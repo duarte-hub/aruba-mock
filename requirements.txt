@@ -8,6 +8,6 @@ python-multipart==0.0.18
 itsdangerous==2.2.0
 passlib[bcrypt]==1.7.4
 apscheduler==3.10.4
-pysnmp-lextudio==6.2.1
+pysnmp>=7.1.0,<8.0.0
 netmiko==4.4.0
 httpx==0.27.2
