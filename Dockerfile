@@ -8,15 +8,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # System deps:
 #   - build-essential + libffi/libssl: needed by cryptography (paramiko/netmiko)
-#   - iputils-ping: for ICMP reachability checks
-#   - libsnmp-dev / snmp / snmp-mibs-downloader: useful for snmpwalk debugging from inside the container
+#   - iputils-ping: ICMP reachability checks
+#   - snmp: gives you `snmpwalk` for inside-the-container debugging
+# (snmp-mibs-downloader is omitted — it's in Debian non-free and only adds
+# symbolic OID names, which we don't need at runtime.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libffi-dev \
         libssl-dev \
         iputils-ping \
         snmp \
-        snmp-mibs-downloader \
         ca-certificates \
         tini \
     && rm -rf /var/lib/apt/lists/*
