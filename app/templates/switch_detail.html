@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}{{ switch.name }} · Switches · Aruba Mock{% endblock %}
+{% block content %}
+<div class="flex items-center gap-3 mb-6">
+    <a href="/switches" class="text-slate-400 hover:text-orange-400 text-sm">← Switches</a>
+    <span class="text-slate-700">/</span>
+    <h1 class="text-2xl font-semibold">{{ switch.name }}</h1>
+    <span class="text-xs px-2 py-0.5 rounded-full ml-1
+        {% if switch.status.value == 'online' %}bg-emerald-900 text-emerald-300
+        {% elif switch.status.value == 'offline' %}bg-red-900 text-red-300
+        {% else %}bg-slate-800 text-slate-400{% endif %}">
+        {{ switch.status.value }}
+    </span>
+</div>
+
+<!-- Switch info bar -->
+<div class="flex flex-wrap gap-6 text-sm text-slate-400 mb-8">
+    <span>IP: <span class="text-slate-200">{{ switch.ip_address }}</span></span>
+    <span>Site: <span class="text-slate-200">{{ switch.site }}</span></span>
+    {% if switch.firmware %}<span>Firmware: <span class="text-slate-200">{{ switch.firmware }}</span></span>{% endif %}
+    {% if switch.last_seen %}<span>Last seen: <span class="text-slate-200">{{ switch.last_seen.strftime('%Y-%m-%d %H:%M') }}</span></span>{% endif %}
+    <a href="/devices/{{ switch.id }}" class="text-orange-400 hover:underline ml-auto">Device detail →</a>
+</div>
+
+<!-- Port management -->
+<div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-medium text-slate-300">Ports <span class="text-slate-500 text-sm font-normal">({{ ports|length }})</span></h2>
+    <button onclick="document.getElementById('add-port').classList.remove('hidden')"
+            class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2 text-sm">
+        + Add port
+    </button>
+</div>
+
+<!-- Add port form -->
+<div id="add-port" class="hidden mb-4 bg-slate-900 border border-slate-800 rounded-xl p-5">
+    <form method="post" action="/switches/{{ switch.id }}/ports" class="grid md:grid-cols-3 gap-4 text-sm">
+        <label class="block">
+            <span class="text-slate-400">Port name</span>
+            <input name="port_name" required placeholder="e.g. GE0/0/1"
+                   class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">Description</span>
+            <input name="description"
+                   class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">Mode</span>
+            <select name="mode" id="add-mode" onchange="toggleAddMode()"
+                    class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                <option value="access">access</option>
+                <option value="trunk">trunk</option>
+            </select>
+        </label>
+        <!-- access fields -->
+        <div id="add-access" class="contents">
+            <label class="block">
+                <span class="text-slate-400">Access VLAN</span>
+                <select name="access_vlan"
+                        class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="">— untagged —</option>
+                    {% for v in vlans %}<option value="{{ v.vlan_id }}">{{ v.vlan_id }} – {{ v.name }}</option>{% endfor %}
+                </select>
+            </label>
+        </div>
+        <!-- trunk fields -->
+        <div id="add-trunk" class="contents hidden-trunk">
+            <label class="block">
+                <span class="text-slate-400">Native VLAN</span>
+                <select name="native_vlan"
+                        class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="">— none —</option>
+                    {% for v in vlans %}<option value="{{ v.vlan_id }}">{{ v.vlan_id }} – {{ v.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Allowed VLANs (comma-separated IDs)</span>
+                <input name="trunk_vlans" placeholder="e.g. 10,20,30"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+        </div>
+        <label class="block">
+            <span class="text-slate-400">Link status</span>
+            <select name="link_status"
+                    class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                <option value="unknown">unknown</option>
+                <option value="up">up</option>
+                <option value="down">down</option>
+            </select>
+        </label>
+        <label class="block">
+            <span class="text-slate-400">Speed (Mbps)</span>
+            <input name="speed_mbps" type="number" placeholder="e.g. 1000"
+                   class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+        </label>
+        <label class="flex items-center gap-2 text-slate-400 self-end pb-2">
+            <input name="admin_enabled" type="checkbox" checked value="on" class="accent-orange-500"/>
+            Admin enabled
+        </label>
+        <div class="md:col-span-3 flex gap-3">
+            <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2">Save</button>
+            <button type="button" onclick="document.getElementById('add-port').classList.add('hidden')"
+                    class="text-slate-400 hover:text-slate-200">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<!-- Ports table -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-slate-900/60 text-left text-slate-400">
+            <tr>
+                <th class="px-4 py-3 font-medium">Port</th>
+                <th class="px-4 py-3 font-medium">Description</th>
+                <th class="px-4 py-3 font-medium">Mode</th>
+                <th class="px-4 py-3 font-medium">VLAN(s)</th>
+                <th class="px-4 py-3 font-medium">Link</th>
+                <th class="px-4 py-3 font-medium">Speed</th>
+                <th class="px-4 py-3 font-medium">Admin</th>
+                <th class="px-4 py-3 font-medium"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+        {% for p in ports %}
+            <tr>
+                <td class="px-4 py-3 font-mono text-orange-400">{{ p.port_name }}</td>
+                <td class="px-4 py-3 text-slate-400">{{ p.description or '—' }}</td>
+                <td class="px-4 py-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full
+                        {% if p.mode == 'trunk' %}bg-blue-900 text-blue-300{% else %}bg-slate-800 text-slate-300{% endif %}">
+                        {{ p.mode }}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-slate-300 font-mono text-xs">
+                    {% if p.mode == 'access' %}
+                        {% if p.access_vlan %}{{ p.access_vlan }}{% else %}—{% endif %}
+                    {% else %}
+                        {% if p.native_vlan %}native:{{ p.native_vlan }} {% endif %}
+                        {% if p.trunk_vlans %}{{ p.trunk_vlans }}{% else %}all{% endif %}
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full
+                        {% if p.link_status == 'up' %}bg-emerald-900 text-emerald-300
+                        {% elif p.link_status == 'down' %}bg-red-900 text-red-300
+                        {% else %}bg-slate-800 text-slate-400{% endif %}">
+                        {{ p.link_status }}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-slate-400">
+                    {% if p.speed_mbps %}{{ p.speed_mbps }} Mbps{% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    {% if p.admin_enabled %}
+                        <span class="text-emerald-400 text-xs">enabled</span>
+                    {% else %}
+                        <span class="text-red-400 text-xs">disabled</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-right whitespace-nowrap">
+                    <button type="button" class="text-slate-300 hover:underline"
+                            onclick="openPortEdit(
+                                {{ p.id }},
+                                {{ p.port_name|tojson }},
+                                {{ (p.description or '')|tojson }},
+                                {{ p.mode|tojson }},
+                                {{ p.access_vlan or 'null' }},
+                                {{ p.native_vlan or 'null' }},
+                                {{ (p.trunk_vlans or '')|tojson }},
+                                {{ p.admin_enabled|tojson }},
+                                {{ p.link_status|tojson }},
+                                {{ p.speed_mbps or 'null' }}
+                            )">Edit</button>
+                    <form method="post" action="/switches/{{ switch.id }}/ports/{{ p.id }}/delete"
+                          class="inline ml-3" onsubmit="return confirm('Delete port {{ p.port_name }}?')">
+                        <button class="text-red-400 hover:underline">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="8" class="px-4 py-6 text-center text-slate-500">No ports configured yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Edit port modal -->
+<div id="port-edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-lg mx-4 overflow-y-auto max-h-screen">
+        <h2 class="text-lg font-semibold mb-4">Edit Port</h2>
+        <form id="port-edit-form" method="post" class="grid md:grid-cols-2 gap-4 text-sm">
+            <label class="block">
+                <span class="text-slate-400">Port name</span>
+                <input id="pe-name" name="port_name" required
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Description</span>
+                <input id="pe-desc" name="description"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Mode</span>
+                <select id="pe-mode" name="mode" onchange="toggleEditMode()"
+                        class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="access">access</option>
+                    <option value="trunk">trunk</option>
+                </select>
+            </label>
+            <label id="pe-access-label" class="block">
+                <span class="text-slate-400">Access VLAN</span>
+                <select id="pe-access" name="access_vlan"
+                        class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="">— untagged —</option>
+                    {% for v in vlans %}<option value="{{ v.vlan_id }}">{{ v.vlan_id }} – {{ v.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label id="pe-native-label" class="block hidden">
+                <span class="text-slate-400">Native VLAN</span>
+                <select id="pe-native" name="native_vlan"
+                        class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="">— none —</option>
+                    {% for v in vlans %}<option value="{{ v.vlan_id }}">{{ v.vlan_id }} – {{ v.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label id="pe-trunk-label" class="block hidden md:col-span-2">
+                <span class="text-slate-400">Allowed VLANs (comma-separated)</span>
+                <input id="pe-trunk" name="trunk_vlans" placeholder="e.g. 10,20,30"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Link status</span>
+                <select id="pe-link" name="link_status"
+                        class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="unknown">unknown</option>
+                    <option value="up">up</option>
+                    <option value="down">down</option>
+                </select>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Speed (Mbps)</span>
+                <input id="pe-speed" name="speed_mbps" type="number"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="flex items-center gap-2 text-slate-400 md:col-span-2">
+                <input id="pe-admin" name="admin_enabled" type="checkbox" value="on" class="accent-orange-500"/>
+                Admin enabled
+            </label>
+            <div class="md:col-span-2 flex gap-3 mt-1">
+                <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2">Save changes</button>
+                <button type="button" onclick="closePortEdit()" class="text-slate-400 hover:text-slate-200">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const switchId = {{ switch.id }};
+
+function toggleAddMode() {
+    const mode = document.getElementById('add-mode').value;
+    document.querySelectorAll('#add-access *[name]').forEach(el => el.disabled = mode !== 'access');
+    document.querySelectorAll('#add-trunk *[name]').forEach(el => el.disabled = mode !== 'trunk');
+    document.getElementById('add-access').style.display = mode === 'access' ? 'contents' : 'none';
+    document.getElementById('add-trunk').style.display = mode === 'trunk' ? 'contents' : 'none';
+}
+
+function toggleEditMode() {
+    const mode = document.getElementById('pe-mode').value;
+    const trunk = mode === 'trunk';
+    document.getElementById('pe-access-label').classList.toggle('hidden', trunk);
+    document.getElementById('pe-native-label').classList.toggle('hidden', !trunk);
+    document.getElementById('pe-trunk-label').classList.toggle('hidden', !trunk);
+    document.getElementById('pe-access').disabled = trunk;
+    document.getElementById('pe-native').disabled = !trunk;
+    document.getElementById('pe-trunk').disabled = !trunk;
+}
+
+function openPortEdit(pk, name, desc, mode, accessVlan, nativeVlan, trunkVlans, adminEnabled, linkStatus, speed) {
+    document.getElementById('port-edit-form').action = '/switches/' + switchId + '/ports/' + pk + '/edit';
+    document.getElementById('pe-name').value = name;
+    document.getElementById('pe-desc').value = desc;
+    document.getElementById('pe-mode').value = mode;
+    document.getElementById('pe-access').value = accessVlan || '';
+    document.getElementById('pe-native').value = nativeVlan || '';
+    document.getElementById('pe-trunk').value = trunkVlans;
+    document.getElementById('pe-admin').checked = adminEnabled;
+    document.getElementById('pe-link').value = linkStatus;
+    document.getElementById('pe-speed').value = speed || '';
+    toggleEditMode();
+    document.getElementById('port-edit-modal').classList.remove('hidden');
+}
+
+function closePortEdit() {
+    document.getElementById('port-edit-modal').classList.add('hidden');
+}
+
+document.getElementById('port-edit-modal').addEventListener('click', function(e) {
+    if (e.target === this) closePortEdit();
+});
+
+toggleAddMode();
+</script>
+{% endblock %}

@@ -181,6 +181,32 @@ class Vlan(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class SwitchPort(Base):
+    """A port on a switch device."""
+
+    __tablename__ = "switch_ports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), index=True
+    )
+    port_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(255))
+    mode: Mapped[str] = mapped_column(String(16), default="access")  # access | trunk
+    access_vlan: Mapped[Optional[int]] = mapped_column(Integer)       # VLAN ID number
+    native_vlan: Mapped[Optional[int]] = mapped_column(Integer)       # trunk native VLAN
+    trunk_vlans: Mapped[Optional[str]] = mapped_column(String(512))   # e.g. "10,20,30"
+    admin_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    link_status: Mapped[str] = mapped_column(String(16), default="unknown")  # up|down|unknown
+    speed_mbps: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    device: Mapped["Device"] = relationship()
+
+
 class AirMatchRun(Base):
     """A persisted AirMatch (channel/power planning) run."""
 

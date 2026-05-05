@@ -15,7 +15,7 @@ from app.auth import (
     verify_login,
 )
 from app.db import get_session
-from app.models import Device, DeviceStatus, Insight, InsightSeverity, Sample, Vlan
+from app.models import Device, DeviceStatus, Insight, InsightSeverity, Sample, SwitchPort, Vlan
 from app.services import airmatch as airmatch_svc
 from app.services import insights as insights_svc
 from app.services.snmp import poll_device
@@ -374,6 +374,115 @@ def vlans_edit(
     vlan.description = description or None
     db.flush()
     return RedirectResponse(url="/switches", status_code=303)
+
+
+@router.get("/switches/{device_id}", response_class=HTMLResponse)
+def switch_detail(
+    request: Request,
+    device_id: int,
+    db: Session = Depends(get_session),
+    user: str = Depends(require_user),
+):
+    switch = db.get(Device, device_id)
+    if not switch or switch.device_type.value != "switch":
+        return RedirectResponse(url="/switches", status_code=303)
+    ports = (
+        db.query(SwitchPort)
+        .filter(SwitchPort.device_id == device_id)
+        .order_by(SwitchPort.port_name)
+        .all()
+    )
+    vlans = db.query(Vlan).order_by(Vlan.vlan_id).all()
+    return templates.TemplateResponse(
+        "switch_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "active": "switches",
+            "switch": switch,
+            "ports": ports,
+            "vlans": vlans,
+        },
+    )
+
+
+@router.post("/switches/{device_id}/ports")
+def ports_create(
+    device_id: int,
+    port_name: str = Form(...),
+    description: str = Form(""),
+    mode: str = Form("access"),
+    access_vlan: str = Form(""),
+    native_vlan: str = Form(""),
+    trunk_vlans: str = Form(""),
+    admin_enabled: str = Form("on"),
+    link_status: str = Form("unknown"),
+    speed_mbps: str = Form(""),
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    switch = db.get(Device, device_id)
+    if not switch:
+        return RedirectResponse(url="/switches", status_code=303)
+    db.add(SwitchPort(
+        device_id=device_id,
+        port_name=port_name,
+        description=description or None,
+        mode=mode,
+        access_vlan=int(access_vlan) if access_vlan.strip() else None,
+        native_vlan=int(native_vlan) if native_vlan.strip() else None,
+        trunk_vlans=trunk_vlans.strip() or None,
+        admin_enabled=admin_enabled == "on",
+        link_status=link_status,
+        speed_mbps=int(speed_mbps) if speed_mbps.strip() else None,
+    ))
+    db.flush()
+    return RedirectResponse(url=f"/switches/{device_id}", status_code=303)
+
+
+@router.post("/switches/{device_id}/ports/{port_pk}/edit")
+def ports_edit(
+    device_id: int,
+    port_pk: int,
+    port_name: str = Form(...),
+    description: str = Form(""),
+    mode: str = Form("access"),
+    access_vlan: str = Form(""),
+    native_vlan: str = Form(""),
+    trunk_vlans: str = Form(""),
+    admin_enabled: str = Form(""),
+    link_status: str = Form("unknown"),
+    speed_mbps: str = Form(""),
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    port = db.get(SwitchPort, port_pk)
+    if not port:
+        return RedirectResponse(url=f"/switches/{device_id}", status_code=303)
+    port.port_name = port_name
+    port.description = description or None
+    port.mode = mode
+    port.access_vlan = int(access_vlan) if access_vlan.strip() else None
+    port.native_vlan = int(native_vlan) if native_vlan.strip() else None
+    port.trunk_vlans = trunk_vlans.strip() or None
+    port.admin_enabled = admin_enabled == "on"
+    port.link_status = link_status
+    port.speed_mbps = int(speed_mbps) if speed_mbps.strip() else None
+    db.flush()
+    return RedirectResponse(url=f"/switches/{device_id}", status_code=303)
+
+
+@router.post("/switches/{device_id}/ports/{port_pk}/delete")
+def ports_delete(
+    device_id: int,
+    port_pk: int,
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    port = db.get(SwitchPort, port_pk)
+    if port:
+        db.delete(port)
+    return RedirectResponse(url=f"/switches/{device_id}", status_code=303)
 
 
 @router.post("/switches/vlans/{pk}/delete")
