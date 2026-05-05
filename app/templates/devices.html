@@ -115,7 +115,7 @@
                         <button class="text-orange-400 hover:underline">Poll</button>
                     </form>
                     <button type="button" class="text-slate-300 hover:underline ml-3"
-                            onclick="openEdit({{ d.id }}, {{ d.name|tojson }}, {{ d.hostname|tojson }}, {{ d.ip_address|tojson }}, {{ d.device_type.value|tojson }}, {{ d.site|tojson }}, {{ d.snmp_version|tojson }}, {{ (d.snmp_community or '')|tojson }}, {{ d.snmp_port }}, {{ (d.ssh_user or '')|tojson }}, {{ d.ssh_port }}, {{ (d.ssh_device_type or 'aruba_os')|tojson }})">
+                            onclick='openEdit({{ d.id }}, {{ d.name|tojson }}, {{ d.hostname|tojson }}, {{ d.ip_address|tojson }}, {{ d.device_type.value|tojson }}, {{ d.site|tojson }}, {{ d.snmp_version|tojson }}, {{ (d.snmp_community or "")|tojson }}, {{ d.snmp_port }}, {{ (d.ssh_user or "")|tojson }}, {{ d.ssh_port }}, {{ (d.ssh_device_type or "aruba_os")|tojson }})'>
                         Edit
                     </button>
                     <form method="post" action="/devices/{{ d.id }}/delete" class="inline ml-3"

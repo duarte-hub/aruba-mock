@@ -159,18 +159,18 @@
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
                     <button type="button" class="text-slate-300 hover:underline"
-                            onclick="openPortEdit(
+                            onclick='openPortEdit(
                                 {{ p.id }},
                                 {{ p.port_name|tojson }},
-                                {{ (p.description or '')|tojson }},
+                                {{ (p.description or "")|tojson }},
                                 {{ p.mode|tojson }},
-                                {{ p.access_vlan or 'null' }},
-                                {{ p.native_vlan or 'null' }},
-                                {{ (p.trunk_vlans or '')|tojson }},
+                                {{ p.access_vlan or "null" }},
+                                {{ p.native_vlan or "null" }},
+                                {{ (p.trunk_vlans or "")|tojson }},
                                 {{ p.admin_enabled|tojson }},
                                 {{ p.link_status|tojson }},
-                                {{ p.speed_mbps or 'null' }}
-                            )">Edit</button>
+                                {{ p.speed_mbps or "null" }}
+                            )'>Edit</button>
                     <form method="post" action="/switches/{{ switch.id }}/ports/{{ p.id }}/delete"
                           class="inline ml-3" onsubmit="return confirm('Delete port {{ p.port_name }}?')">
                         <button class="text-red-400 hover:underline">Delete</button>

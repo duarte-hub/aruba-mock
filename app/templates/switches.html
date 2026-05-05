@@ -100,7 +100,7 @@
                     <td class="px-4 py-3 text-slate-400">{{ v.description or '—' }}</td>
                     <td class="px-4 py-3 text-right">
                         <button type="button" class="text-slate-300 hover:underline"
-                                onclick="openVlanEdit({{ v.id }}, {{ v.vlan_id }}, {{ v.name|tojson }}, {{ (v.description or '')|tojson }})">
+                                onclick='openVlanEdit({{ v.id }}, {{ v.vlan_id }}, {{ v.name|tojson }}, {{ (v.description or "")|tojson }})'>
                             Edit
                         </button>
                         <form method="post" action="/switches/vlans/{{ v.id }}/delete" class="inline ml-3"
