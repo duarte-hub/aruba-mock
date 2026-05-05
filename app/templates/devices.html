@@ -114,6 +114,10 @@
                     <form method="post" action="/devices/{{ d.id }}/poll" class="inline">
                         <button class="text-orange-400 hover:underline">Poll</button>
                     </form>
+                    <button type="button" class="text-slate-300 hover:underline ml-3"
+                            onclick="openEdit({{ d.id }}, {{ d.name|tojson }}, {{ d.hostname|tojson }}, {{ d.ip_address|tojson }}, {{ d.device_type.value|tojson }}, {{ d.site|tojson }}, {{ d.snmp_version|tojson }}, {{ (d.snmp_community or '')|tojson }}, {{ d.snmp_port }}, {{ (d.ssh_user or '')|tojson }}, {{ d.ssh_port }}, {{ (d.ssh_device_type or 'aruba_os')|tojson }})">
+                        Edit
+                    </button>
                     <form method="post" action="/devices/{{ d.id }}/delete" class="inline ml-3"
                           onsubmit="return confirm('Delete {{ d.name }}?')">
                         <button class="text-red-400 hover:underline">Delete</button>
@@ -126,4 +130,100 @@
         </tbody>
     </table>
 </div>
+
+<!-- Edit device modal -->
+<div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-2xl mx-4 overflow-y-auto max-h-screen">
+        <h2 class="text-lg font-semibold mb-4">Edit Device</h2>
+        <form id="edit-form" method="post" class="grid md:grid-cols-2 gap-4 text-sm">
+            <label class="block">
+                <span class="text-slate-400">Name</span>
+                <input id="e-name" name="name" required class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Hostname</span>
+                <input id="e-hostname" name="hostname" required class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">IP address</span>
+                <input id="e-ip" name="ip_address" required class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Type</span>
+                <select id="e-type" name="device_type" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="other">other</option>
+                    <option value="ap">Access Point</option>
+                    <option value="switch">Switch</option>
+                    <option value="gateway">Gateway</option>
+                    <option value="controller">Controller</option>
+                </select>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Site</span>
+                <input id="e-site" name="site" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SNMP version</span>
+                <select id="e-snmp-ver" name="snmp_version" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2">
+                    <option value="2c">v2c</option>
+                    <option value="3">v3</option>
+                    <option value="1">v1</option>
+                </select>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SNMP community</span>
+                <input id="e-snmp-comm" name="snmp_community" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SNMP port</span>
+                <input id="e-snmp-port" name="snmp_port" type="number" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SSH user</span>
+                <input id="e-ssh-user" name="ssh_user" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SSH password</span>
+                <input name="ssh_password" type="password" placeholder="leave blank to keep current"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SSH device type</span>
+                <input id="e-ssh-dtype" name="ssh_device_type" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">SSH port</span>
+                <input id="e-ssh-port" name="ssh_port" type="number" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <div class="md:col-span-2 flex gap-3 mt-2">
+                <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2">Save changes</button>
+                <button type="button" onclick="closeEdit()" class="text-slate-400 hover:text-slate-200">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openEdit(id, name, hostname, ip, type, site, snmpVer, snmpComm, snmpPort, sshUser, sshPort, sshDtype) {
+    document.getElementById('edit-form').action = '/devices/' + id + '/edit';
+    document.getElementById('e-name').value = name;
+    document.getElementById('e-hostname').value = hostname;
+    document.getElementById('e-ip').value = ip;
+    document.getElementById('e-type').value = type;
+    document.getElementById('e-site').value = site;
+    document.getElementById('e-snmp-ver').value = snmpVer;
+    document.getElementById('e-snmp-comm').value = snmpComm;
+    document.getElementById('e-snmp-port').value = snmpPort;
+    document.getElementById('e-ssh-user').value = sshUser;
+    document.getElementById('e-ssh-port').value = sshPort;
+    document.getElementById('e-ssh-dtype').value = sshDtype;
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+function closeEdit() {
+    document.getElementById('edit-modal').classList.add('hidden');
+}
+document.getElementById('edit-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeEdit();
+});
+</script>
 {% endblock %}

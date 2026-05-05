@@ -161,6 +161,47 @@ def devices_create(
     return RedirectResponse(url="/devices", status_code=303)
 
 
+@router.post("/devices/{device_id}/edit")
+def devices_edit(
+    device_id: int,
+    name: str = Form(...),
+    hostname: str = Form(...),
+    ip_address: str = Form(...),
+    device_type: str = Form("other"),
+    site: str = Form("default"),
+    snmp_version: str = Form("2c"),
+    snmp_community: str = Form("public"),
+    snmp_port: int = Form(161),
+    ssh_user: str = Form(""),
+    ssh_password: str = Form(""),
+    ssh_port: int = Form(22),
+    ssh_device_type: str = Form("aruba_os"),
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    device = db.get(Device, device_id)
+    if not device:
+        return RedirectResponse(url="/devices", status_code=303)
+    existing = db.query(Device).filter(Device.ip_address == ip_address, Device.id != device_id).first()
+    if existing:
+        return RedirectResponse(url="/devices?error=duplicate", status_code=303)
+    device.name = name
+    device.hostname = hostname
+    device.ip_address = ip_address
+    device.device_type = device_type
+    device.site = site
+    device.snmp_version = snmp_version
+    device.snmp_community = snmp_community or None
+    device.snmp_port = snmp_port
+    device.ssh_user = ssh_user or None
+    if ssh_password:
+        device.ssh_password = ssh_password
+    device.ssh_port = ssh_port
+    device.ssh_device_type = ssh_device_type or "aruba_os"
+    db.flush()
+    return RedirectResponse(url="/devices", status_code=303)
+
+
 @router.post("/devices/{device_id}/delete")
 def devices_delete(
     device_id: int,
