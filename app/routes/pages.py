@@ -15,7 +15,7 @@ from app.auth import (
     verify_login,
 )
 from app.db import get_session
-from app.models import Device, DeviceStatus, Insight, InsightSeverity, Sample
+from app.models import Device, DeviceStatus, Insight, InsightSeverity, Sample, Vlan
 from app.services import airmatch as airmatch_svc
 from app.services import insights as insights_svc
 from app.services.snmp import poll_device
@@ -311,6 +311,81 @@ def device_ssh(
             "ssh_output": output,
         },
     )
+
+
+# ---- switches ------------------------------------------------------------
+
+@router.get("/switches", response_class=HTMLResponse)
+def switches_view(
+    request: Request,
+    db: Session = Depends(get_session),
+    user: str = Depends(require_user),
+):
+    switches = (
+        db.query(Device)
+        .filter(Device.device_type == "switch")
+        .order_by(Device.name)
+        .all()
+    )
+    vlans = db.query(Vlan).order_by(Vlan.vlan_id).all()
+    return templates.TemplateResponse(
+        "switches.html",
+        {
+            "request": request,
+            "user": user,
+            "active": "switches",
+            "switches": switches,
+            "vlans": vlans,
+        },
+    )
+
+
+@router.post("/switches/vlans")
+def vlans_create(
+    vlan_id: int = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    if db.query(Vlan).filter(Vlan.vlan_id == vlan_id).first():
+        return RedirectResponse(url="/switches?error=duplicate_vlan", status_code=303)
+    db.add(Vlan(vlan_id=vlan_id, name=name, description=description or None))
+    db.flush()
+    return RedirectResponse(url="/switches", status_code=303)
+
+
+@router.post("/switches/vlans/{pk}/edit")
+def vlans_edit(
+    pk: int,
+    vlan_id: int = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    vlan = db.get(Vlan, pk)
+    if not vlan:
+        return RedirectResponse(url="/switches", status_code=303)
+    if db.query(Vlan).filter(Vlan.vlan_id == vlan_id, Vlan.id != pk).first():
+        return RedirectResponse(url="/switches?error=duplicate_vlan", status_code=303)
+    vlan.vlan_id = vlan_id
+    vlan.name = name
+    vlan.description = description or None
+    db.flush()
+    return RedirectResponse(url="/switches", status_code=303)
+
+
+@router.post("/switches/vlans/{pk}/delete")
+def vlans_delete(
+    pk: int,
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    vlan = db.get(Vlan, pk)
+    if vlan:
+        db.delete(vlan)
+    return RedirectResponse(url="/switches", status_code=303)
 
 
 # ---- insights ------------------------------------------------------------

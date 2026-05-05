@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Switches · Aruba Mock{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">Switch Management</h1>
+
+<!-- Switches list -->
+<section class="mb-10">
+    <h2 class="text-lg font-medium text-slate-300 mb-3">Switches</h2>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-900/60 text-left text-slate-400">
+                <tr>
+                    <th class="px-4 py-3 font-medium">Name</th>
+                    <th class="px-4 py-3 font-medium">IP</th>
+                    <th class="px-4 py-3 font-medium">Site</th>
+                    <th class="px-4 py-3 font-medium">Status</th>
+                    <th class="px-4 py-3 font-medium">Last seen</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+            {% for sw in switches %}
+                <tr>
+                    <td class="px-4 py-3">
+                        <a href="/devices/{{ sw.id }}" class="text-slate-200 hover:text-orange-400">{{ sw.name }}</a>
+                    </td>
+                    <td class="px-4 py-3 text-slate-400">{{ sw.ip_address }}</td>
+                    <td class="px-4 py-3 text-slate-400">{{ sw.site }}</td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full
+                            {% if sw.status.value == 'online' %}bg-emerald-900 text-emerald-300
+                            {% elif sw.status.value == 'offline' %}bg-red-900 text-red-300
+                            {% else %}bg-slate-800 text-slate-400{% endif %}">
+                            {{ sw.status.value }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-400">
+                        {% if sw.last_seen %}{{ sw.last_seen.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">No switches found. Add a device with type "Switch".</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- VLAN management -->
+<section>
+    <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-medium text-slate-300">VLANs</h2>
+        <button onclick="document.getElementById('add-vlan').classList.remove('hidden')"
+                class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2 text-sm">
+            + Add VLAN
+        </button>
+    </div>
+
+    <!-- Add VLAN form -->
+    <div id="add-vlan" class="hidden mb-4 bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <form method="post" action="/switches/vlans" class="flex flex-wrap gap-4 items-end text-sm">
+            <label class="block">
+                <span class="text-slate-400">VLAN ID (1–4094)</span>
+                <input name="vlan_id" type="number" min="1" max="4094" required
+                       class="mt-1 w-28 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block flex-1 min-w-40">
+                <span class="text-slate-400">Name</span>
+                <input name="name" required
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block flex-1 min-w-52">
+                <span class="text-slate-400">Description</span>
+                <input name="description"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <div class="flex gap-3 pb-0.5">
+                <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2">Save</button>
+                <button type="button" onclick="document.getElementById('add-vlan').classList.add('hidden')"
+                        class="text-slate-400 hover:text-slate-200">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- VLAN table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-900/60 text-left text-slate-400">
+                <tr>
+                    <th class="px-4 py-3 font-medium w-24">VLAN ID</th>
+                    <th class="px-4 py-3 font-medium">Name</th>
+                    <th class="px-4 py-3 font-medium">Description</th>
+                    <th class="px-4 py-3 font-medium w-32"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+            {% for v in vlans %}
+                <tr>
+                    <td class="px-4 py-3 font-mono text-orange-400">{{ v.vlan_id }}</td>
+                    <td class="px-4 py-3 text-slate-200">{{ v.name }}</td>
+                    <td class="px-4 py-3 text-slate-400">{{ v.description or '—' }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <button type="button" class="text-slate-300 hover:underline"
+                                onclick="openVlanEdit({{ v.id }}, {{ v.vlan_id }}, {{ v.name|tojson }}, {{ (v.description or '')|tojson }})">
+                            Edit
+                        </button>
+                        <form method="post" action="/switches/vlans/{{ v.id }}/delete" class="inline ml-3"
+                              onsubmit="return confirm('Delete VLAN {{ v.vlan_id }} ({{ v.name }})?')">
+                            <button class="text-red-400 hover:underline">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">No VLANs defined yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Edit VLAN modal -->
+<div id="vlan-edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4">
+        <h2 class="text-lg font-semibold mb-4">Edit VLAN</h2>
+        <form id="vlan-edit-form" method="post" class="flex flex-col gap-4 text-sm">
+            <label class="block">
+                <span class="text-slate-400">VLAN ID (1–4094)</span>
+                <input id="ve-id" name="vlan_id" type="number" min="1" max="4094" required
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Name</span>
+                <input id="ve-name" name="name" required
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <label class="block">
+                <span class="text-slate-400">Description</span>
+                <input id="ve-desc" name="description"
+                       class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2"/>
+            </label>
+            <div class="flex gap-3 mt-1">
+                <button class="bg-orange-500 hover:bg-orange-400 text-slate-950 font-semibold rounded-lg px-4 py-2">Save changes</button>
+                <button type="button" onclick="closeVlanEdit()" class="text-slate-400 hover:text-slate-200">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openVlanEdit(pk, vlanId, name, desc) {
+    document.getElementById('vlan-edit-form').action = '/switches/vlans/' + pk + '/edit';
+    document.getElementById('ve-id').value = vlanId;
+    document.getElementById('ve-name').value = name;
+    document.getElementById('ve-desc').value = desc;
+    document.getElementById('vlan-edit-modal').classList.remove('hidden');
+}
+function closeVlanEdit() {
+    document.getElementById('vlan-edit-modal').classList.add('hidden');
+}
+document.getElementById('vlan-edit-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeVlanEdit();
+});
+</script>
+{% endblock %}

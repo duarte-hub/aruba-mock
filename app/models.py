@@ -169,6 +169,18 @@ class Insight(Base):
     device: Mapped[Optional[Device]] = relationship(back_populates="insights")
 
 
+class Vlan(Base):
+    """A VLAN in the global registry."""
+
+    __tablename__ = "vlans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vlan_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class AirMatchRun(Base):
     """A persisted AirMatch (channel/power planning) run."""
 
