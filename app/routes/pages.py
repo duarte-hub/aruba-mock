@@ -15,7 +15,7 @@ from app.auth import (
     verify_login,
 )
 from app.db import get_session
-from app.models import Device, DeviceStatus, Insight, InsightSeverity, Sample, SwitchPort, Vlan
+from app.models import Device, DeviceStatus, DeviceType, Insight, InsightSeverity, Sample, SwitchPort, Vlan
 from app.services import airmatch as airmatch_svc
 from app.services import insights as insights_svc
 from app.services.snmp import poll_device
@@ -323,7 +323,7 @@ def switches_view(
 ):
     switches = (
         db.query(Device)
-        .filter(Device.device_type == "switch")
+        .filter(Device.device_type == DeviceType.SWITCH)
         .order_by(Device.name)
         .all()
     )
@@ -384,7 +384,7 @@ def switch_detail(
     user: str = Depends(require_user),
 ):
     switch = db.get(Device, device_id)
-    if not switch or switch.device_type.value != "switch":
+    if not switch or switch.device_type != DeviceType.SWITCH:
         return RedirectResponse(url="/switches", status_code=303)
     ports = (
         db.query(SwitchPort)

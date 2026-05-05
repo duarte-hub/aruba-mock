@@ -22,9 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root user
-RUN useradd --create-home --uid 1000 aruba
-
 WORKDIR /app
 
 # Install Python deps first for better layer caching
@@ -37,9 +34,10 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Persistent data dir (SQLite, secrets, etc.)
-RUN mkdir -p /data && chown -R aruba:aruba /data /app
+RUN mkdir -p /data
 
-USER aruba
+# Declare /data as a volume so Docker manages it even without an explicit mount
+VOLUME /data
 
 ENV ARUBA_DB_PATH=/data/aruba.db \
     ARUBA_HOST=0.0.0.0 \
