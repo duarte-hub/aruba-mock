@@ -111,8 +111,8 @@
 </div>
 
 <!-- Ports table -->
-<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto">
+    <table class="w-full text-sm whitespace-nowrap">
         <thead class="bg-slate-900/60 text-left text-slate-400">
             <tr>
                 <th class="px-4 py-3 font-medium">Port</th>
@@ -122,6 +122,10 @@
                 <th class="px-4 py-3 font-medium">Link</th>
                 <th class="px-4 py-3 font-medium">Speed</th>
                 <th class="px-4 py-3 font-medium">Admin</th>
+                <th class="px-4 py-3 font-medium">MAC</th>
+                <th class="px-4 py-3 font-medium">Vendor</th>
+                <th class="px-4 py-3 font-medium">LLDP Neighbor</th>
+                <th class="px-4 py-3 font-medium">Errors (↓/↑)</th>
                 <th class="px-4 py-3 font-medium"></th>
             </tr>
         </thead>
@@ -129,7 +133,7 @@
         {% for p in ports %}
             <tr>
                 <td class="px-4 py-3 font-mono text-orange-400">{{ p.port_name }}</td>
-                <td class="px-4 py-3 text-slate-400">{{ p.description or '—' }}</td>
+                <td class="px-4 py-3 text-slate-400 max-w-[10rem] truncate">{{ p.description or '—' }}</td>
                 <td class="px-4 py-3">
                     <span class="text-xs px-2 py-0.5 rounded-full
                         {% if p.mode == 'trunk' %}bg-blue-900 text-blue-300{% else %}bg-slate-800 text-slate-300{% endif %}">
@@ -162,6 +166,31 @@
                         <span class="text-red-400 text-xs">disabled</span>
                     {% endif %}
                 </td>
+                <td class="px-4 py-3 font-mono text-xs text-slate-400">
+                    {{ p.mac_address or '—' }}
+                </td>
+                <td class="px-4 py-3 text-slate-400 text-xs max-w-[8rem] truncate" title="{{ p.mac_vendor or '' }}">
+                    {{ p.mac_vendor or '—' }}
+                </td>
+                <td class="px-4 py-3 text-slate-400 text-xs max-w-[12rem] truncate"
+                    title="{{ p.lldp_neighbor or '' }}{% if p.lldp_neighbor_port %} · {{ p.lldp_neighbor_port }}{% endif %}">
+                    {% if p.lldp_neighbor %}
+                        {{ p.lldp_neighbor }}{% if p.lldp_neighbor_port %}<span class="text-slate-600"> · {{ p.lldp_neighbor_port }}</span>{% endif %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-xs font-mono">
+                    {% set in_e = p.in_errors or 0 %}
+                    {% set out_e = p.out_errors or 0 %}
+                    {% set in_d = p.in_discards or 0 %}
+                    {% if in_e == 0 and out_e == 0 and in_d == 0 and p.in_errors is none %}
+                        <span class="text-slate-600">—</span>
+                    {% elif in_e == 0 and out_e == 0 and in_d == 0 %}
+                        <span class="text-emerald-600">0 / 0</span>
+                    {% else %}
+                        <span class="text-red-400">{{ in_e }} / {{ out_e }}</span>
+                        {% if in_d > 0 %}<span class="text-slate-500 ml-1">({{ in_d }}d)</span>{% endif %}
+                    {% endif %}
+                </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
                     <button type="button" class="text-slate-300 hover:underline"
                             onclick='openPortEdit(
@@ -183,7 +212,7 @@
                 </td>
             </tr>
         {% else %}
-            <tr><td colspan="8" class="px-4 py-6 text-center text-slate-500">No ports configured yet.</td></tr>
+            <tr><td colspan="12" class="px-4 py-6 text-center text-slate-500">No ports configured yet.</td></tr>
         {% endfor %}
         </tbody>
     </table>

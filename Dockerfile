@@ -36,9 +36,6 @@ RUN chmod +x /entrypoint.sh
 # Persistent data dir (SQLite, secrets, etc.)
 RUN mkdir -p /data
 
-# Declare /data as a volume so Docker manages it even without an explicit mount
-VOLUME /data
-
 ENV ARUBA_DB_PATH=/data/aruba.db \
     ARUBA_HOST=0.0.0.0 \
     ARUBA_PORT=8080 \

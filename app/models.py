@@ -199,6 +199,16 @@ class SwitchPort(Base):
     admin_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     link_status: Mapped[str] = mapped_column(String(16), default="unknown")  # up|down|unknown
     speed_mbps: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # SNMP-discovered — populated by discover_switch()
+    mac_address: Mapped[Optional[str]] = mapped_column(String(17))       # aa:bb:cc:dd:ee:ff
+    mac_vendor: Mapped[Optional[str]] = mapped_column(String(128))
+    lldp_neighbor: Mapped[Optional[str]] = mapped_column(String(255))    # remote sysName
+    lldp_neighbor_port: Mapped[Optional[str]] = mapped_column(String(128))  # remote portId
+    in_errors: Mapped[Optional[int]] = mapped_column(Integer)
+    out_errors: Mapped[Optional[int]] = mapped_column(Integer)
+    in_discards: Mapped[Optional[int]] = mapped_column(Integer)
+
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

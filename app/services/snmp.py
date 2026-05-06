@@ -1,4 +1,4 @@
-"""SNMP polling service.
+"""SNMP polling + switch discovery service.
 
 Uses pysnmp's high-level hlapi.v3arch.asyncio API. Supports SNMPv2c and SNMPv3.
 
@@ -27,6 +27,8 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+import httpx
 
 from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData,
@@ -70,14 +72,23 @@ HR_STORAGE_TABLE = "1.3.6.1.2.1.25.2.3.1"  # walked
 # IF-MIB — switch port discovery
 IF_DESCR_TABLE        = "1.3.6.1.2.1.2.2.1.2"     # ifDescr
 IF_TYPE_TABLE         = "1.3.6.1.2.1.2.2.1.3"     # ifType (int)
+IF_PHYS_ADDR_TABLE    = "1.3.6.1.2.1.2.2.1.6"     # ifPhysAddress (MAC)
 IF_SPEED_TABLE        = "1.3.6.1.2.1.2.2.1.5"     # ifSpeed bits/s
 IF_ADMIN_STATUS_TABLE = "1.3.6.1.2.1.2.2.1.7"     # 1=up 2=down
 IF_OPER_STATUS_TABLE  = "1.3.6.1.2.1.2.2.1.8"     # 1=up 2=down
+IF_IN_DISCARDS_TABLE  = "1.3.6.1.2.1.2.2.1.13"    # ifInDiscards
+IF_IN_ERRORS_TABLE    = "1.3.6.1.2.1.2.2.1.14"    # ifInErrors
+IF_OUT_DISCARDS_TABLE = "1.3.6.1.2.1.2.2.1.19"    # ifOutDiscards
+IF_OUT_ERRORS_TABLE   = "1.3.6.1.2.1.2.2.1.20"    # ifOutErrors
 IF_ALIAS_TABLE        = "1.3.6.1.2.1.31.1.1.1.18" # ifAlias (description)
 
 # Q-BRIDGE-MIB — VLAN discovery
 DOT1Q_VLAN_STATIC_NAME = "1.3.6.1.2.1.17.7.1.4.3.1.1"  # {vlan_id → name}
 DOT1Q_PVID_TABLE        = "1.3.6.1.2.1.17.7.1.4.5.1.1"  # {bridge_port → pvid}
+
+# LLDP-MIB — neighbor discovery (IEEE 802.1AB; index: timeMark.localPortNum.remIndex)
+LLDP_REM_PORT_ID  = "1.0.8802.1.1.2.1.4.1.1.7"  # lldpRemPortId
+LLDP_REM_SYS_NAME = "1.0.8802.1.1.2.1.4.1.1.9"  # lldpRemSysName
 
 # ifType values that represent physical/LAG switch ports
 _PHYSICAL_IF_TYPES = {"6", "161", "ethernetCsmacd", "ieee8023adLag"}
@@ -103,6 +114,13 @@ class DiscoveredPort:
     admin_up: bool = True
     speed_mbps: Optional[int] = None
     access_vlan: Optional[int] = None
+    mac_address: Optional[str] = None
+    mac_vendor: Optional[str] = None
+    lldp_neighbor: Optional[str] = None
+    lldp_neighbor_port: Optional[str] = None
+    in_errors: Optional[int] = None
+    out_errors: Optional[int] = None
+    in_discards: Optional[int] = None
 
 
 @dataclass
@@ -271,14 +289,45 @@ def _status_up(val: str) -> bool:
     return val in ("1", "up")
 
 
+def _format_mac(raw: str) -> Optional[str]:
+    """Parse pysnmp OctetString hex representation → 'aa:bb:cc:dd:ee:ff'."""
+    if not raw or "No Such" in raw:
+        return None
+    hex_str = raw.lower().replace("0x", "").replace(":", "").replace("-", "").replace(" ", "")
+    if len(hex_str) != 12 or hex_str == "000000000000":
+        return None
+    return ":".join(hex_str[i:i+2] for i in range(0, 12, 2))
+
+
+def _lldp_local_port(oid_str: str, col_oid: str) -> Optional[str]:
+    """Extract localPortNum from an LLDP OID (index: timeMark.localPortNum.remIndex)."""
+    prefix = col_oid + "."
+    if not oid_str.startswith(prefix):
+        return None
+    parts = oid_str[len(prefix):].split(".")
+    # Index has exactly 3 components; localPortNum is index 1
+    return parts[1] if len(parts) >= 3 else None
+
+
+async def _lookup_mac_vendor(oui: str) -> Optional[str]:
+    """Query macvendors.com for a 6-hex-char OUI. Returns None on any failure."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"https://api.macvendors.com/{oui}")
+            if r.status_code == 200:
+                return r.text.strip()[:128]
+    except Exception as exc:
+        log.debug("MAC vendor lookup %s: %s", oui, exc)
+    return None
+
+
 async def discover_switch(
     device, timeout: int = 10
 ) -> tuple[list[DiscoveredPort], list[DiscoveredVlan]]:
-    """Walk IF-MIB and Q-BRIDGE-MIB to discover ports and VLANs.
+    """Walk IF-MIB, Q-BRIDGE-MIB, and LLDP-MIB to discover ports and VLANs.
 
     Returns (ports, vlans). Never raises — returns empty lists on any failure.
-    Uses last OID component as table index, which assumes bridge_port == ifIndex
-    (true for most managed Aruba/HP switches).
+    Assumes bridge_port == ifIndex (true for most Aruba/HP switches).
     """
     engine = SnmpEngine()
     try:
@@ -291,26 +340,71 @@ async def discover_switch(
 
     auth = _auth_data(device)
     ctx = ContextData()
-    MAX = 512  # enough for a 48-port switch with 200 VLANs
+    MAX = 512  # enough for a 48-port switch with many VLANs
 
     def _tbl(rows: list[tuple[str, str]]) -> dict[str, str]:
         return {_tail(oid): val for oid, val in rows}
 
     if_descr = _tbl(await _walk(engine, auth, target, ctx, IF_DESCR_TABLE, MAX))
     if not if_descr:
-        log.debug("discover_switch %s: no ifDescr rows, skipping", device.ip_address)
+        log.debug("discover_switch %s: no ifDescr rows", device.ip_address)
         return [], []
 
-    if_type  = _tbl(await _walk(engine, auth, target, ctx, IF_TYPE_TABLE, MAX))
-    if_speed = _tbl(await _walk(engine, auth, target, ctx, IF_SPEED_TABLE, MAX))
-    if_admin = _tbl(await _walk(engine, auth, target, ctx, IF_ADMIN_STATUS_TABLE, MAX))
-    if_oper  = _tbl(await _walk(engine, auth, target, ctx, IF_OPER_STATUS_TABLE, MAX))
-    if_alias = _tbl(await _walk(engine, auth, target, ctx, IF_ALIAS_TABLE, MAX))
-    pvid     = _tbl(await _walk(engine, auth, target, ctx, DOT1Q_PVID_TABLE, MAX))
+    # Walk all IF-MIB counters in parallel
+    (
+        if_type_rows, if_mac_rows, if_speed_rows, if_admin_rows,
+        if_oper_rows, if_alias_rows, if_in_err_rows, if_out_err_rows,
+        if_in_dis_rows, pvid_rows, vlan_name_rows,
+        lldp_sys_rows, lldp_port_rows,
+    ) = await asyncio.gather(
+        _walk(engine, auth, target, ctx, IF_TYPE_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_PHYS_ADDR_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_SPEED_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_ADMIN_STATUS_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_OPER_STATUS_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_ALIAS_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_IN_ERRORS_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_OUT_ERRORS_TABLE, MAX),
+        _walk(engine, auth, target, ctx, IF_IN_DISCARDS_TABLE, MAX),
+        _walk(engine, auth, target, ctx, DOT1Q_PVID_TABLE, MAX),
+        _walk(engine, auth, target, ctx, DOT1Q_VLAN_STATIC_NAME, MAX),
+        _walk(engine, auth, target, ctx, LLDP_REM_SYS_NAME, MAX),
+        _walk(engine, auth, target, ctx, LLDP_REM_PORT_ID, MAX),
+    )
+
+    if_type    = _tbl(if_type_rows)
+    if_speed   = _tbl(if_speed_rows)
+    if_admin   = _tbl(if_admin_rows)
+    if_oper    = _tbl(if_oper_rows)
+    if_alias   = _tbl(if_alias_rows)
+    if_in_err  = _tbl(if_in_err_rows)
+    if_out_err = _tbl(if_out_err_rows)
+    if_in_dis  = _tbl(if_in_dis_rows)
+    pvid       = _tbl(pvid_rows)
+
+    # MAC addresses: {ifIndex → formatted mac}
+    if_mac: dict[str, str] = {}
+    for oid, val in if_mac_rows:
+        mac = _format_mac(val)
+        if mac:
+            if_mac[_tail(oid)] = mac
+
+    # LLDP neighbors: {localPortNum → sys_name / port_id} — take first per port
+    lldp_sys: dict[str, str] = {}
+    for oid, val in lldp_sys_rows:
+        port_num = _lldp_local_port(oid, LLDP_REM_SYS_NAME)
+        if port_num and port_num not in lldp_sys and val and "No Such" not in val:
+            lldp_sys[port_num] = val
+
+    lldp_port: dict[str, str] = {}
+    for oid, val in lldp_port_rows:
+        port_num = _lldp_local_port(oid, LLDP_REM_PORT_ID)
+        if port_num and port_num not in lldp_port and val and "No Such" not in val:
+            lldp_port[port_num] = val
 
     # VLANs
     vlans: list[DiscoveredVlan] = []
-    for oid, val in await _walk(engine, auth, target, ctx, DOT1Q_VLAN_STATIC_NAME, MAX):
+    for oid, val in vlan_name_rows:
         if not val or "No Such" in val:
             continue
         try:
@@ -318,13 +412,12 @@ async def discover_switch(
         except ValueError:
             continue
         if 1 <= vlan_id <= 4094:
-            vlans.append(DiscoveredVlan(vlan_id=vlan_id, name=val or f"VLAN{vlan_id}"))
+            vlans.append(DiscoveredVlan(vlan_id=vlan_id, name=val))
 
     # Ports
     ports: list[DiscoveredPort] = []
     for idx, name in if_descr.items():
-        itype = if_type.get(idx, "")
-        if itype not in _PHYSICAL_IF_TYPES:
+        if if_type.get(idx, "") not in _PHYSICAL_IF_TYPES:
             continue
 
         speed_bps = _to_int(if_speed.get(idx))
@@ -345,7 +438,33 @@ async def discover_switch(
             admin_up=_status_up(if_admin.get(idx, "1")),
             speed_mbps=speed_mbps,
             access_vlan=vlan_id,
+            mac_address=if_mac.get(idx),
+            lldp_neighbor=lldp_sys.get(idx),
+            lldp_neighbor_port=lldp_port.get(idx),
+            in_errors=_to_int(if_in_err.get(idx)),
+            out_errors=_to_int(if_out_err.get(idx)),
+            in_discards=_to_int(if_in_dis.get(idx)),
         ))
+
+    # MAC vendor lookup — deduplicate OUIs, run in parallel
+    unique_ouis = {
+        p.mac_address.replace(":", "")[:6].upper()
+        for p in ports if p.mac_address
+    }
+    if unique_ouis:
+        vendor_results = await asyncio.gather(
+            *[_lookup_mac_vendor(oui) for oui in unique_ouis],
+            return_exceptions=True,
+        )
+        vendor_cache = {
+            oui: v
+            for oui, v in zip(unique_ouis, vendor_results)
+            if isinstance(v, str)
+        }
+        for p in ports:
+            if p.mac_address:
+                oui = p.mac_address.replace(":", "")[:6].upper()
+                p.mac_vendor = vendor_cache.get(oui)
 
     log.info(
         "discover_switch %s: %d ports, %d VLANs",

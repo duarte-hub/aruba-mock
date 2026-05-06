@@ -345,6 +345,19 @@ def _apply_switch_discovery(
                 port.description = dp.description
             if port.mode == "access" and dp.access_vlan:
                 port.access_vlan = dp.access_vlan
+            # Always overwrite SNMP-discovered fields
+            if dp.mac_address:
+                port.mac_address = dp.mac_address
+            if dp.mac_vendor:
+                port.mac_vendor = dp.mac_vendor
+            port.lldp_neighbor = dp.lldp_neighbor
+            port.lldp_neighbor_port = dp.lldp_neighbor_port
+            if dp.in_errors is not None:
+                port.in_errors = dp.in_errors
+            if dp.out_errors is not None:
+                port.out_errors = dp.out_errors
+            if dp.in_discards is not None:
+                port.in_discards = dp.in_discards
         else:
             db.add(SwitchPort(
                 device_id=device_id,
@@ -355,6 +368,13 @@ def _apply_switch_discovery(
                 admin_enabled=dp.admin_up,
                 link_status="up" if dp.link_up else "down",
                 speed_mbps=dp.speed_mbps,
+                mac_address=dp.mac_address,
+                mac_vendor=dp.mac_vendor,
+                lldp_neighbor=dp.lldp_neighbor,
+                lldp_neighbor_port=dp.lldp_neighbor_port,
+                in_errors=dp.in_errors,
+                out_errors=dp.out_errors,
+                in_discards=dp.in_discards,
             ))
 
 
