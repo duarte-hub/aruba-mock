@@ -67,6 +67,21 @@ WLSX_AP_RADIO_TABLE = "1.3.6.1.4.1.14823.2.3.3.1.2.1.1"  # apChannelTable-ish
 HR_PROCESSOR_LOAD_TABLE = "1.3.6.1.2.1.25.3.3.1.2"  # walked
 HR_STORAGE_TABLE = "1.3.6.1.2.1.25.2.3.1"  # walked
 
+# IF-MIB — switch port discovery
+IF_DESCR_TABLE        = "1.3.6.1.2.1.2.2.1.2"     # ifDescr
+IF_TYPE_TABLE         = "1.3.6.1.2.1.2.2.1.3"     # ifType (int)
+IF_SPEED_TABLE        = "1.3.6.1.2.1.2.2.1.5"     # ifSpeed bits/s
+IF_ADMIN_STATUS_TABLE = "1.3.6.1.2.1.2.2.1.7"     # 1=up 2=down
+IF_OPER_STATUS_TABLE  = "1.3.6.1.2.1.2.2.1.8"     # 1=up 2=down
+IF_ALIAS_TABLE        = "1.3.6.1.2.1.31.1.1.1.18" # ifAlias (description)
+
+# Q-BRIDGE-MIB — VLAN discovery
+DOT1Q_VLAN_STATIC_NAME = "1.3.6.1.2.1.17.7.1.4.3.1.1"  # {vlan_id → name}
+DOT1Q_PVID_TABLE        = "1.3.6.1.2.1.17.7.1.4.5.1.1"  # {bridge_port → pvid}
+
+# ifType values that represent physical/LAG switch ports
+_PHYSICAL_IF_TYPES = {"6", "161", "ethernetCsmacd", "ieee8023adLag"}
+
 
 _AUTH_PROTOCOLS = {
     "md5": usmHMACMD5AuthProtocol,
@@ -78,6 +93,22 @@ _PRIV_PROTOCOLS = {
     "aes": usmAesCfb128Protocol,
     "aes128": usmAesCfb128Protocol,
 }
+
+
+@dataclass
+class DiscoveredPort:
+    name: str
+    description: str = ""
+    link_up: bool = False
+    admin_up: bool = True
+    speed_mbps: Optional[int] = None
+    access_vlan: Optional[int] = None
+
+
+@dataclass
+class DiscoveredVlan:
+    vlan_id: int
+    name: str
 
 
 @dataclass
@@ -227,3 +258,97 @@ async def poll_device(device, timeout: int = 5) -> SnmpResult:
         res.raw["ap_radio_rows"] = ap_rows[:16]
 
     return res
+
+
+# ----- switch discovery ---------------------------------------------------
+
+def _tail(oid_str: str) -> str:
+    """Return the last dotted component of an OID string (the table index)."""
+    return oid_str.rsplit(".", 1)[-1]
+
+
+def _status_up(val: str) -> bool:
+    return val in ("1", "up")
+
+
+async def discover_switch(
+    device, timeout: int = 10
+) -> tuple[list[DiscoveredPort], list[DiscoveredVlan]]:
+    """Walk IF-MIB and Q-BRIDGE-MIB to discover ports and VLANs.
+
+    Returns (ports, vlans). Never raises — returns empty lists on any failure.
+    Uses last OID component as table index, which assumes bridge_port == ifIndex
+    (true for most managed Aruba/HP switches).
+    """
+    engine = SnmpEngine()
+    try:
+        target = await UdpTransportTarget.create(
+            (device.ip_address, device.snmp_port), timeout=timeout, retries=1
+        )
+    except Exception as exc:
+        log.warning("discover_switch %s transport: %s", device.ip_address, exc)
+        return [], []
+
+    auth = _auth_data(device)
+    ctx = ContextData()
+    MAX = 512  # enough for a 48-port switch with 200 VLANs
+
+    def _tbl(rows: list[tuple[str, str]]) -> dict[str, str]:
+        return {_tail(oid): val for oid, val in rows}
+
+    if_descr = _tbl(await _walk(engine, auth, target, ctx, IF_DESCR_TABLE, MAX))
+    if not if_descr:
+        log.debug("discover_switch %s: no ifDescr rows, skipping", device.ip_address)
+        return [], []
+
+    if_type  = _tbl(await _walk(engine, auth, target, ctx, IF_TYPE_TABLE, MAX))
+    if_speed = _tbl(await _walk(engine, auth, target, ctx, IF_SPEED_TABLE, MAX))
+    if_admin = _tbl(await _walk(engine, auth, target, ctx, IF_ADMIN_STATUS_TABLE, MAX))
+    if_oper  = _tbl(await _walk(engine, auth, target, ctx, IF_OPER_STATUS_TABLE, MAX))
+    if_alias = _tbl(await _walk(engine, auth, target, ctx, IF_ALIAS_TABLE, MAX))
+    pvid     = _tbl(await _walk(engine, auth, target, ctx, DOT1Q_PVID_TABLE, MAX))
+
+    # VLANs
+    vlans: list[DiscoveredVlan] = []
+    for oid, val in await _walk(engine, auth, target, ctx, DOT1Q_VLAN_STATIC_NAME, MAX):
+        if not val or "No Such" in val:
+            continue
+        try:
+            vlan_id = int(_tail(oid))
+        except ValueError:
+            continue
+        if 1 <= vlan_id <= 4094:
+            vlans.append(DiscoveredVlan(vlan_id=vlan_id, name=val or f"VLAN{vlan_id}"))
+
+    # Ports
+    ports: list[DiscoveredPort] = []
+    for idx, name in if_descr.items():
+        itype = if_type.get(idx, "")
+        if itype not in _PHYSICAL_IF_TYPES:
+            continue
+
+        speed_bps = _to_int(if_speed.get(idx))
+        speed_mbps = speed_bps // 1_000_000 if speed_bps else None
+
+        desc = if_alias.get(idx, "") or ""
+        if "No Such" in desc:
+            desc = ""
+
+        vlan_id = _to_int(pvid.get(idx))
+        if vlan_id == 0:
+            vlan_id = None
+
+        ports.append(DiscoveredPort(
+            name=name,
+            description=desc,
+            link_up=_status_up(if_oper.get(idx, "2")),
+            admin_up=_status_up(if_admin.get(idx, "1")),
+            speed_mbps=speed_mbps,
+            access_vlan=vlan_id,
+        ))
+
+    log.info(
+        "discover_switch %s: %d ports, %d VLANs",
+        device.ip_address, len(ports), len(vlans),
+    )
+    return ports, vlans

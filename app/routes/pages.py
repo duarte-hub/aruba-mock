@@ -18,7 +18,7 @@ from app.db import get_session
 from app.models import Device, DeviceStatus, DeviceType, Insight, InsightSeverity, Sample, SwitchPort, Vlan
 from app.services import airmatch as airmatch_svc
 from app.services import insights as insights_svc
-from app.services.snmp import poll_device
+from app.services.snmp import DiscoveredPort, DiscoveredVlan, discover_switch, poll_device
 from app.services.ssh import is_safe_command, run_command
 
 router = APIRouter()
@@ -269,6 +269,9 @@ async def device_poll(
         device.last_error = None
         if result.sys_descr and not device.firmware:
             device.firmware = result.sys_descr[:128]
+        if device.device_type == DeviceType.SWITCH:
+            disc_ports, disc_vlans = await discover_switch(device)
+            _apply_switch_discovery(db, device_id, disc_ports, disc_vlans)
     else:
         device.status = DeviceStatus.OFFLINE
         device.last_error = result.error or "unreachable"
@@ -311,6 +314,48 @@ def device_ssh(
             "ssh_output": output,
         },
     )
+
+
+# ---- switch discovery helper --------------------------------------------
+
+def _apply_switch_discovery(
+    db: Session,
+    device_id: int,
+    ports: list[DiscoveredPort],
+    vlans: list[DiscoveredVlan],
+) -> None:
+    """Upsert SNMP-discovered ports and VLANs without clobbering manual edits."""
+    existing_vids = {v.vlan_id for v in db.query(Vlan).all()}
+    for dv in vlans:
+        if dv.vlan_id not in existing_vids:
+            db.add(Vlan(vlan_id=dv.vlan_id, name=dv.name))
+
+    by_name = {
+        p.port_name: p
+        for p in db.query(SwitchPort).filter(SwitchPort.device_id == device_id).all()
+    }
+    for dp in ports:
+        if dp.name in by_name:
+            port = by_name[dp.name]
+            port.link_status = "up" if dp.link_up else "down"
+            port.admin_enabled = dp.admin_up
+            if dp.speed_mbps:
+                port.speed_mbps = dp.speed_mbps
+            if not port.description and dp.description:
+                port.description = dp.description
+            if port.mode == "access" and dp.access_vlan:
+                port.access_vlan = dp.access_vlan
+        else:
+            db.add(SwitchPort(
+                device_id=device_id,
+                port_name=dp.name,
+                description=dp.description or None,
+                mode="access",
+                access_vlan=dp.access_vlan,
+                admin_enabled=dp.admin_up,
+                link_status="up" if dp.link_up else "down",
+                speed_mbps=dp.speed_mbps,
+            ))
 
 
 # ---- switches ------------------------------------------------------------
@@ -404,6 +449,30 @@ def switch_detail(
             "vlans": vlans,
         },
     )
+
+
+@router.post("/switches/{device_id}/discover")
+async def switch_discover(
+    device_id: int,
+    db: Session = Depends(get_session),
+    _: str = Depends(require_user),
+):
+    device = db.get(Device, device_id)
+    if not device or device.device_type != DeviceType.SWITCH:
+        return RedirectResponse(url="/switches", status_code=303)
+    result = await poll_device(device)
+    if result.reachable:
+        device.status = DeviceStatus.ONLINE
+        device.last_error = None
+        if result.sys_descr and not device.firmware:
+            device.firmware = result.sys_descr[:128]
+        disc_ports, disc_vlans = await discover_switch(device)
+        _apply_switch_discovery(db, device_id, disc_ports, disc_vlans)
+    else:
+        device.status = DeviceStatus.OFFLINE
+        device.last_error = result.error or "unreachable"
+    db.flush()
+    return RedirectResponse(url=f"/switches/{device_id}", status_code=303)
 
 
 @router.post("/switches/{device_id}/ports")

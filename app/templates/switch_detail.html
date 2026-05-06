@@ -20,6 +20,11 @@
     {% if switch.firmware %}<span>Firmware: <span class="text-slate-200">{{ switch.firmware }}</span></span>{% endif %}
     {% if switch.last_seen %}<span>Last seen: <span class="text-slate-200">{{ switch.last_seen.strftime('%Y-%m-%d %H:%M') }}</span></span>{% endif %}
     <a href="/devices/{{ switch.id }}" class="text-orange-400 hover:underline ml-auto">Device detail →</a>
+    <form method="post" action="/switches/{{ switch.id }}/discover">
+        <button class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg px-3 py-1 text-xs border border-slate-700">
+            Sync from SNMP
+        </button>
+    </form>
 </div>
 
 <!-- Port management -->
