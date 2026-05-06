@@ -72,7 +72,6 @@ HR_STORAGE_TABLE = "1.3.6.1.2.1.25.2.3.1"  # walked
 # IF-MIB — switch port discovery
 IF_DESCR_TABLE        = "1.3.6.1.2.1.2.2.1.2"     # ifDescr
 IF_TYPE_TABLE         = "1.3.6.1.2.1.2.2.1.3"     # ifType (int)
-IF_PHYS_ADDR_TABLE    = "1.3.6.1.2.1.2.2.1.6"     # ifPhysAddress (MAC)
 IF_SPEED_TABLE        = "1.3.6.1.2.1.2.2.1.5"     # ifSpeed bits/s
 IF_ADMIN_STATUS_TABLE = "1.3.6.1.2.1.2.2.1.7"     # 1=up 2=down
 IF_OPER_STATUS_TABLE  = "1.3.6.1.2.1.2.2.1.8"     # 1=up 2=down
@@ -81,6 +80,11 @@ IF_IN_ERRORS_TABLE    = "1.3.6.1.2.1.2.2.1.14"    # ifInErrors
 IF_OUT_DISCARDS_TABLE = "1.3.6.1.2.1.2.2.1.19"    # ifOutDiscards
 IF_OUT_ERRORS_TABLE   = "1.3.6.1.2.1.2.2.1.20"    # ifOutErrors
 IF_ALIAS_TABLE        = "1.3.6.1.2.1.31.1.1.1.18" # ifAlias (description)
+
+# BRIDGE-MIB — FDB (forwarding database) — connected device MACs
+DOT1D_TP_FDB_PORT      = "1.3.6.1.2.1.17.4.3.1.2"  # {mac → bridge_port}  indexed by 6-octet MAC
+DOT1D_TP_FDB_STATUS    = "1.3.6.1.2.1.17.4.3.1.3"  # {mac → status}  3=learned, 4=self
+DOT1D_BASE_PORT_IF_IDX = "1.3.6.1.2.1.17.1.4.1.2"  # {bridge_port → ifIndex}
 
 # Q-BRIDGE-MIB — VLAN discovery
 DOT1Q_VLAN_STATIC_NAME = "1.3.6.1.2.1.17.7.1.4.3.1.1"  # {vlan_id → name}
@@ -289,14 +293,23 @@ def _status_up(val: str) -> bool:
     return val in ("1", "up")
 
 
-def _format_mac(raw: str) -> Optional[str]:
-    """Parse pysnmp OctetString hex representation → 'aa:bb:cc:dd:ee:ff'."""
-    if not raw or "No Such" in raw:
+def _fdb_mac_from_oid(oid_str: str, col_oid: str) -> Optional[str]:
+    """Extract MAC address from a BRIDGE-MIB FDB OID (index = 6 decimal octets).
+
+    e.g. '1.3.6.1.2.1.17.4.3.1.2.170.187.204.221.238.255'
+          → 'aa:bb:cc:dd:ee:ff'
+    """
+    prefix = col_oid + "."
+    if not oid_str.startswith(prefix):
         return None
-    hex_str = raw.lower().replace("0x", "").replace(":", "").replace("-", "").replace(" ", "")
-    if len(hex_str) != 12 or hex_str == "000000000000":
+    parts = oid_str[len(prefix):].split(".")
+    if len(parts) != 6:
         return None
-    return ":".join(hex_str[i:i+2] for i in range(0, 12, 2))
+    try:
+        mac = ":".join(f"{int(p):02x}" for p in parts)
+    except ValueError:
+        return None
+    return None if mac == "00:00:00:00:00:00" else mac
 
 
 def _lldp_local_port(oid_str: str, col_oid: str) -> Optional[str]:
@@ -350,15 +363,15 @@ async def discover_switch(
         log.debug("discover_switch %s: no ifDescr rows", device.ip_address)
         return [], []
 
-    # Walk all IF-MIB counters in parallel
+    # Walk all tables in parallel
     (
-        if_type_rows, if_mac_rows, if_speed_rows, if_admin_rows,
+        if_type_rows, if_speed_rows, if_admin_rows,
         if_oper_rows, if_alias_rows, if_in_err_rows, if_out_err_rows,
         if_in_dis_rows, pvid_rows, vlan_name_rows,
         lldp_sys_rows, lldp_port_rows,
+        fdb_port_rows, fdb_status_rows, bridge_if_rows,
     ) = await asyncio.gather(
         _walk(engine, auth, target, ctx, IF_TYPE_TABLE, MAX),
-        _walk(engine, auth, target, ctx, IF_PHYS_ADDR_TABLE, MAX),
         _walk(engine, auth, target, ctx, IF_SPEED_TABLE, MAX),
         _walk(engine, auth, target, ctx, IF_ADMIN_STATUS_TABLE, MAX),
         _walk(engine, auth, target, ctx, IF_OPER_STATUS_TABLE, MAX),
@@ -370,6 +383,9 @@ async def discover_switch(
         _walk(engine, auth, target, ctx, DOT1Q_VLAN_STATIC_NAME, MAX),
         _walk(engine, auth, target, ctx, LLDP_REM_SYS_NAME, MAX),
         _walk(engine, auth, target, ctx, LLDP_REM_PORT_ID, MAX),
+        _walk(engine, auth, target, ctx, DOT1D_TP_FDB_PORT, MAX),
+        _walk(engine, auth, target, ctx, DOT1D_TP_FDB_STATUS, MAX),
+        _walk(engine, auth, target, ctx, DOT1D_BASE_PORT_IF_IDX, MAX),
     )
 
     if_type    = _tbl(if_type_rows)
@@ -382,12 +398,26 @@ async def discover_switch(
     if_in_dis  = _tbl(if_in_dis_rows)
     pvid       = _tbl(pvid_rows)
 
-    # MAC addresses: {ifIndex → formatted mac}
+    # FDB: build {ifIndex → first learned device MAC}
+    # Step 1: mac → bridge_port (only status=3 learned entries)
+    fdb_status: dict[str, str] = {
+        _fdb_mac_from_oid(oid, DOT1D_TP_FDB_STATUS): val
+        for oid, val in fdb_status_rows
+        if _fdb_mac_from_oid(oid, DOT1D_TP_FDB_STATUS)
+    }
+    # Step 2: bridge_port → ifIndex
+    bridge_to_if: dict[str, str] = _tbl(bridge_if_rows)  # {bridge_port → ifIndex}
+    # Step 3: ifIndex → first learned device MAC
     if_mac: dict[str, str] = {}
-    for oid, val in if_mac_rows:
-        mac = _format_mac(val)
-        if mac:
-            if_mac[_tail(oid)] = mac
+    for oid, bridge_port in fdb_port_rows:
+        mac = _fdb_mac_from_oid(oid, DOT1D_TP_FDB_PORT)
+        if not mac:
+            continue
+        if fdb_status.get(mac, "") != "3":  # 3 = learned (not self/mgmt)
+            continue
+        ifidx = bridge_to_if.get(bridge_port)
+        if ifidx and ifidx not in if_mac:
+            if_mac[ifidx] = mac
 
     # LLDP neighbors: {localPortNum → sys_name / port_id} — take first per port
     lldp_sys: dict[str, str] = {}
