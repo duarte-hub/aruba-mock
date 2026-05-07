@@ -398,25 +398,27 @@ async def discover_switch(
     if_in_dis  = _tbl(if_in_dis_rows)
     pvid       = _tbl(pvid_rows)
 
-    # FDB: build {ifIndex → first learned device MAC}
-    # Step 1: mac → bridge_port (only status=3 learned entries)
+    # FDB: build {ifIndex → first device MAC}
+    # Exclude self/mgmt entries; treat unknown status as learned (permissive).
+    # Fall back to bridge_port as ifIndex when bridge_to_if is incomplete
+    # (bridge_port == ifIndex on virtually all Aruba/HP switches).
     fdb_status: dict[str, str] = {
         _fdb_mac_from_oid(oid, DOT1D_TP_FDB_STATUS): val
         for oid, val in fdb_status_rows
         if _fdb_mac_from_oid(oid, DOT1D_TP_FDB_STATUS)
     }
-    # Step 2: bridge_port → ifIndex
-    bridge_to_if: dict[str, str] = _tbl(bridge_if_rows)  # {bridge_port → ifIndex}
-    # Step 3: ifIndex → first learned device MAC
+    bridge_to_if: dict[str, str] = _tbl(bridge_if_rows)
     if_mac: dict[str, str] = {}
     for oid, bridge_port in fdb_port_rows:
         mac = _fdb_mac_from_oid(oid, DOT1D_TP_FDB_PORT)
         if not mac:
             continue
-        if fdb_status.get(mac, "") != "3":  # 3 = learned (not self/mgmt)
+        # Skip the switch's own MACs (self=4, mgmt=5 and their symbolic names)
+        if fdb_status.get(mac, "") in ("4", "self", "5", "mgmt"):
             continue
-        ifidx = bridge_to_if.get(bridge_port)
-        if ifidx and ifidx not in if_mac:
+        # Use bridge→ifIndex map; fall back to bridge_port itself
+        ifidx = bridge_to_if.get(bridge_port) or bridge_port
+        if ifidx not in if_mac:
             if_mac[ifidx] = mac
 
     # LLDP neighbors: {localPortNum → sys_name / port_id} — take first per port
@@ -476,25 +478,22 @@ async def discover_switch(
             in_discards=_to_int(if_in_dis.get(idx)),
         ))
 
-    # MAC vendor lookup — deduplicate OUIs, run in parallel
-    unique_ouis = {
+    # MAC vendor lookup — deduplicate OUIs, sequential to respect 1 req/s rate limit
+    unique_ouis = list({
         p.mac_address.replace(":", "")[:6].upper()
         for p in ports if p.mac_address
-    }
-    if unique_ouis:
-        vendor_results = await asyncio.gather(
-            *[_lookup_mac_vendor(oui) for oui in unique_ouis],
-            return_exceptions=True,
-        )
-        vendor_cache = {
-            oui: v
-            for oui, v in zip(unique_ouis, vendor_results)
-            if isinstance(v, str)
-        }
-        for p in ports:
-            if p.mac_address:
-                oui = p.mac_address.replace(":", "")[:6].upper()
-                p.mac_vendor = vendor_cache.get(oui)
+    })[:8]  # cap at 8 OUI lookups per sync
+    vendor_cache: dict[str, str] = {}
+    for i, oui in enumerate(unique_ouis):
+        if i > 0:
+            await asyncio.sleep(1.1)  # macvendors.com free tier: 1 req/s
+        vendor = await _lookup_mac_vendor(oui)
+        if vendor:
+            vendor_cache[oui] = vendor
+    for p in ports:
+        if p.mac_address:
+            oui = p.mac_address.replace(":", "")[:6].upper()
+            p.mac_vendor = vendor_cache.get(oui)
 
     log.info(
         "discover_switch %s: %d ports, %d VLANs",

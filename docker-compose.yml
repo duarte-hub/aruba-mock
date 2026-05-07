@@ -13,6 +13,7 @@ services:
       ARUBA_ADMIN_USER: admin
       ARUBA_ADMIN_PASSWORD: ChangeMe!
       ARUBA_SECRET_KEY: change-me-to-a-random-string
+      ARUBA_DB_PATH: /data/aruba.db
       ARUBA_POLL_INTERVAL: "60"
       ARUBA_LOG_LEVEL: info
       TZ: UTC
