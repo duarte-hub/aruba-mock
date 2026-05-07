@@ -148,7 +148,13 @@ def _suggest_tx_power(r: RadioInput, neighbors_assigned: int) -> float:
 
 
 def _gather_radios(session, band: str | None) -> list[RadioInput]:
-    """Pull radios joined to APs, with a naive 'neighbors = same site' grouping."""
+    """Pull radios for APs.
+
+    APs that have never been polled (no rows in the radios table) get
+    synthetic RadioInput entries with null channel/power/util so AirMatch
+    can still produce a plan for them.
+    """
+    # Fetch real radio records joined to AP devices
     q = (
         select(Radio, Device)
         .join(Device, Radio.device_id == Device.id)
@@ -159,7 +165,10 @@ def _gather_radios(session, band: str | None) -> list[RadioInput]:
 
     by_site: dict[str, list[int]] = {}
     radios: list[RadioInput] = []
+    devices_with_radio: set[int] = set()  # any band
+
     for radio, device in rows:
+        devices_with_radio.add(device.id)
         if band and radio.band != band:
             continue
         radios.append(RadioInput(
@@ -173,16 +182,40 @@ def _gather_radios(session, band: str | None) -> list[RadioInput]:
             noise_floor_dbm=radio.noise_floor_dbm,
             neighbors=[],
         ))
-        by_site.setdefault(device.site, []).append(device.id)
+        if device.id not in by_site.get(device.site, []):
+            by_site.setdefault(device.site, []).append(device.id)
+
+    # Add synthetic entries for APs that have no Radio rows at all
+    all_aps = session.execute(
+        select(Device)
+        .where(Device.enabled.is_(True))
+        .where(Device.device_type == DeviceType.AP)
+    ).scalars().all()
+
+    for device in all_aps:
+        if device.id in devices_with_radio:
+            continue
+        for b in ([band] if band else ["2.4", "5"]):
+            radios.append(RadioInput(
+                radio_id=-(device.id * 10 + {"2.4": 1, "5": 2, "6": 3}.get(b, 0)),
+                device_id=device.id,
+                device_name=device.name,
+                band=b,
+                current_channel=None,
+                current_tx_power=None,
+                channel_utilization_pct=None,
+                noise_floor_dbm=None,
+                neighbors=[],
+            ))
+        if device.id not in by_site.get(device.site, []):
+            by_site.setdefault(device.site, []).append(device.id)
 
     # Neighbor approximation: every AP at the same site, on the same band, hears every other AP
     by_id_band = {(r.device_id, r.band): r for r in radios}
     for r in radios:
-        site_devs = []
-        for s_devs in by_site.values():
-            if r.device_id in s_devs:
-                site_devs = s_devs
-                break
+        site_devs = next(
+            (devs for devs in by_site.values() if r.device_id in devs), []
+        )
         r.neighbors = [
             d for d in site_devs
             if d != r.device_id and (d, r.band) in by_id_band
